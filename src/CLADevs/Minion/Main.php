@@ -315,14 +315,14 @@ class Main extends PluginBase{
                 $block = $minion->getLookingBlock();
                 if($block->isSameState(VanillaBlocks::AIR())) $this->stopBreakAnimation($block);
                 $minion->setDelay(1);
-                $minion->respawnToAll();
+                //$minion->respawnToAll();
                 $block = $minion->getLookingBlock();
               //  $minion->breakBlock($block);
                 $this->stopBreakAnimation($block);
             }
             if($data === 1){
                 $handMinion = $minion->getInventory()->getItemInHand();
-                if($handMinion->equals(VanillaItems::AIR())) {
+                if(!$handMinion->equals(VanillaItems::AIR())) {
                     if($player->getInventory()->canAddItem($handMinion)){
                         $player->getInventory()->addItem($handMinion);
                         $minion->getInventory()->setItemInHand(VanillaItems::AIR());
@@ -330,7 +330,7 @@ class Main extends PluginBase{
                         $block = $minion->getLookingBlock();
                         $minion->setDelay(1);
                         if($block->isSameState(VanillaBlocks::AIR())) $this->stopBreakAnimation($block);
-                        $minion->respawnToAll();
+                        //$minion->respawnToAll();
                     }else $player->sendMessage("§6§l● §r§cTúi đồ của bạn đầy.");
                 }
             }

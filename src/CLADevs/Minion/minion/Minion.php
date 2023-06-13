@@ -40,14 +40,11 @@ class Minion extends Human{
     private string $player;
     private int $time = 0;
     private mixed $delay = null;
-    private array $ore = [14, 15, 16, 73, 56, 129];
     private array $ores = [];
 
     private bool $is_sell = false;
     private bool $is_ore = false;
 
-    private $check = null;
-    private Vector3 $savePos;
     private Player $owner;
 
     public function __construct(Location $location, Skin $skin, ?CompoundTag $nbt = null)
@@ -69,6 +66,7 @@ class Minion extends Human{
         ];
         $this->player = $nbt->getString("player");
         $this->minionName = "§l§eMINION\n" ."§f(§a" .$this->player."§f)";
+        $this->setSkin($this->getSkin());
         $this->setHealth(1);
         $this->setMaxHealth(1);
         $this->setNameTagAlwaysVisible();
@@ -84,20 +82,15 @@ class Minion extends Human{
         }    
     }
 
+    /**
+     * @throws \JsonException
+     */
     public function saveNBT(): CompoundTag{
         $nbt = parent::saveNBT();
         $nbt->setString("player", $this->player);
         $nbt->setString("SELL", $this->is_sell ? "yes" : "no");
         $nbt->setString("ORE", $this->is_ore ? "yes" : "no");
         return $nbt;
-    }
-
-    public function setDefaultPos(Vector3 $vec) :void{
-        $this->savePos = $vec;
-    }
-
-    public function getDefaultPos() :?Vector3{
-        return $this->savePos;
     }
 
     public function attack(EntityDamageEvent $source): void{
@@ -123,7 +116,8 @@ class Minion extends Human{
         $this->owner = $player;
     }
 
-    public function setDelay(int $sc){
+    public function setDelay(int $sc): void
+    {
         $this->delay = $sc;
     }
 
@@ -137,7 +131,7 @@ class Minion extends Human{
 
     public function onBreakBlock() :void{
         if (
-            $this->getLookingBlock()->getName() === VanillaBlocks::AIR()->getName() and
+            $this->getLookingBlock()->getName() !== VanillaBlocks::AIR()->getName() and
             $this->getLookingBlock()->isSolid()
         ){
             $block = $this->getLookingBlock();
@@ -284,7 +278,10 @@ class Minion extends Human{
 
     public function breakBlock(Block $block): void{
         $inv = $this->getMineInv();
-        $item = $this->ores[$block->getName()];
+        $item = $block->asItem();
+        if(isset($this->ores[$block->getName()]) && $this->is_ore){
+            $item = $this->ores[$block->getName()];
+        }
         if(!empty($inv)){
             if(!$inv->canAddItem($item) and $this->is_sell){
                  Main::get()->sell($this->getOwner(), $inv);
