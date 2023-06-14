@@ -2,6 +2,9 @@
 # {PLAYER} -> The player name
 # {NUMBER} -> The vault number
 inventory-name: "Minion Inventory"
+# 1: BedrockEconomy
+# 2: Economy
+economy: 1
 
 ban-blocks: [7, 54]
 database:

@@ -4,6 +4,10 @@ api: 5.0.0
 main: CLADevs\Minion\Main
 author: GalaxyGames
 
+virions:
+  - libasynql
+  - FormsUI
+
 commands:
   minion:
     description: "minion"

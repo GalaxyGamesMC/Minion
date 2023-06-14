@@ -7,6 +7,9 @@ namespace CLADevs\Minion;
 use CLADevs\Minion\database\Database;
 use CLADevs\Minion\database\Vault;
 use CLADevs\Minion\minion\Minion;
+use CLADevs\Minion\utils\BedrockEconomyProvider;
+use CLADevs\Minion\utils\Economy;
+use CLADevs\Minion\utils\EconomySProvider;
 use muqsit\invmenu\InvMenuHandler;
 use pocketmine\block\Block;
 use pocketmine\block\VanillaBlocks;
@@ -17,7 +20,9 @@ use pocketmine\entity\EntityDataHelper;
 use pocketmine\entity\EntityFactory;
 use pocketmine\entity\Human;
 use pocketmine\entity\Skin;
+use pocketmine\inventory\Inventory;
 use pocketmine\item\Item;
+use pocketmine\item\ItemBlock;
 use pocketmine\item\Pickaxe;
 use pocketmine\item\VanillaItems;
 use pocketmine\nbt\tag\CompoundTag;
@@ -25,7 +30,6 @@ use pocketmine\network\mcpe\protocol\LevelEventPacket;
 use pocketmine\network\mcpe\protocol\types\LevelEvent;
 use pocketmine\player\Player;
 use pocketmine\plugin\PluginBase;
-use pocketmine\Server;
 use pocketmine\utils\Config;
 use pocketmine\utils\SingletonTrait;
 use pocketmine\utils\TextFormat as C;
@@ -39,10 +43,10 @@ class Main extends PluginBase{
 
     CONST SELL = 0;
     CONST ORE = 1;
-    CONST DOUBLE_CHEST = 2;
 
     private Database $database;
     private Config $sell;
+    private ?Economy $EconomyAPI;
 
     public function onLoad(): void{
         self::setInstance($this);
@@ -50,6 +54,12 @@ class Main extends PluginBase{
 
     public function onEnable(): void{
         $this->initVirions();
+        $this->initEconomy();
+        if ($this->EconomyAPI === null) {
+            $this->getLogger()->error("Invalid economy provider selected. Please select a valid economy provider.");
+            $this->getServer()->getPluginManager()->disablePlugin($this);
+            return;
+        }
         $this->createDatabase();
         $this->saveResource("img/geometry.json");
         $this->saveResource("img/Minion.png");
@@ -59,7 +69,15 @@ class Main extends PluginBase{
         Vault::setNameFormat((string) $this->getConfig()->get("inventory-name"));
         EntityFactory::getInstance()->register(Minion::class, function(World $world, CompoundTag $nbt) : Minion{
             return new Minion(EntityDataHelper::parseLocation($nbt, $world), Human::parseSkinNBT($nbt), $nbt);
-        }, ['Minion']);
+        }, ['Minion', 'minecraft:minion']);
+    }
+
+    public function initEconomy(): void{
+        $this->EconomyAPI = match(intval($this->getConfig()->get("economy"))) {
+            1 => new BedrockEconomyProvider(),
+            2 => new EconomySProvider(),
+            default => null
+        };
     }
 
     public function getDatabase() : Database{
@@ -86,28 +104,23 @@ class Main extends PluginBase{
         return self::$instance;
     }
 
-    public function sell(Player $player, $tile) {
+    public function sell(Player $player, Inventory $tile): void
+    {
         $items = $tile->getContents();
         $prices = 0;
+        /** @var Item|ItemBlock $item */
         foreach($items as $item){
-            if($this->sell->get($item->getId()) !== null && $this->sell->get($item->getId()) > 0){
-                $price = $this->sell->get($item->getId()) * $item->getCount();
-                // EconomyAPI::getInstance()->addMoney($player, $price);
-                $money = $this->sell->get($item->getId());
-                $count = $item->getCount();
-                $iName = $item->getName();
+            if ($item instanceof ItemBlock) {
+                $item = $item->getBlock()->asItem();
+            }
+            if($this->sell->get($item->getName()) !== null && $this->sell->get($item->getName()) > 0){
+                $price = $this->sell->get($item->getName()) * $item->getCount();
+                $this->EconomyAPI->addMoney($player, $price);
                 $prices = $prices + $price;
                 $tile->remove($item);
             }
         }
-        $player->sendMessage("§l§e•> §6Minion đã bán được:§a $prices xu");
-    }
-
-    public function getBanBlocks() :array {
-        if(($blocks = (array)$this->getConfig()->get("ban-blocks")) !== null){
-            return $blocks;
-        }
-        return $null = [];
+        $player->sendMessage("§l§e•> §6Minion sold everything and got :§a $prices $");
     }
 
     /**
@@ -222,37 +235,39 @@ class Main extends PluginBase{
         $form->sendToPlayer($player);
     }
 
-    public function upgradeMinion(Player $player, $minion) :void{
-        $form = new SimpleForm(function(Player $player, ?int $data) use ($minion){
-            if(is_null($data)){
-                $this->sendForm($player, $minion);
-                return;
-            }
-            $form = new CustomForm(function(Player $player, ?array $data){});
-            if($this->hasPer($data, $player)){
-                $form->addLabel("§l§cĐã nâng cấp, hãy đợi mùa tiếp theo");
-                $form->sendToPlayer($player);
-            }else{
-               // if(PointAPI::getInstance()->myPoint($player) >= 500){
-                    Server::getInstance()->getCommandMap()->dispatch(new ConsoleCommandSender(
-                        Server::getInstance(),
-                        Server::getInstance()->getLanguage()
-                    ), "setuperm ".$player->getName(). " minion.".$data);
-                   // PointAPI::getInstance()->reducePoint($player, 500);
-                    $form->addLabel("§l§aNâng cấp minion thành công");
+    public function upgradeMinion(Player $player, Minion $minion) : void{
+        $this->EconomyAPI->getMoney($player, function ($money) use ($minion, $player) {
+            $form = new SimpleForm(function(Player $player, ?int $data) use ($minion, $money){
+                if(is_null($data)){
+                    $this->sendForm($player, $minion);
+                    return;
+                }
+                $form = new CustomForm(function(Player $player, ?array $data){});
+                if($minion->getPropertyMinion($data)){
+                    $form->addLabel("§l§cYou have already purchased this upgrade.");
                     $form->sendToPlayer($player);
-                //}
-            }
+                }else{
+                    if ($money >= 5000) {
+                        $minion->setPropertyMinion($data, true);
+                        $this->EconomyAPI->reduceMoney($player, 5000);
+                        $form->addLabel("§l§aUpgrade Minion success");
+                        $form->sendToPlayer($player);
+                    } else {
+                        $form->addLabel("§l§cYou don't have enough money.");
+                        $form->sendToPlayer($player);
+                    }
+                }
+            });
+            $form->setTitle("§l§6Upgrade Minion");
+            $form->setContent("§l§fMoney:§e ". $money);
+            $form->addButton("§l§e●§9 Auto Sell §e●\n§l§b「§c 5000$ 」");
+            $form->addButton("§l§e●§9 Auto Smelt §e●\n§l§b「§c 5000$ 」");
+            //$form->addButton("Mở rộng túi đồ\n(50 LCoin)");
+            $form->sendToPlayer($player);
         });
-        $form->setTitle("§l§6Upgrade Minion");
-        //$form->setContent("§l§fPoint:§e ". PointAPI::getInstance()->myPoint($player));
-        $form->addButton("§l§e●§9 Tự động bán §e●\n§l§b「§c 500 Point 」");
-        $form->addButton("§l§e●§9 Tự động nung §e●\n§l§b「§c 500 Point 」");
-        //$form->addButton("Mở rộng túi đồ\n(50 LCoin)");
-        $form->sendToPlayer($player);
     }
 
-    public function sendMinionInv($player, $minion, $owner = null): void
+    public function sendMinionInv(Player $player, Minion $minion, $owner = null): void
     {
         if($owner !== null){
             $this->getDatabase()->loadVault($owner, 1, function(Vault $vault) use($player): void{
@@ -287,13 +302,21 @@ class Main extends PluginBase{
             $player->sendMessage("§r§cHãy lấy lại cúp trước khi thu hồi minion.");
             return;
         }
-        if($player->getInventory()->canAddItem($this->getItem($player))){
+        $item = $this->getItem($player);
+        $properties = [
+            Main::SELL => "SELL",
+            Main::ORE => "ORE"
+        ];
+        foreach ($properties as $key => $value) {
+            if ($entity->getPropertyMinion($key)) $item->getNamedTag()->setString($value, "true");
+        }
+        if($player->getInventory()->canAddItem($item)){
             $block = $entity->getLookingBlock();
             $entity->setDelay(1);
             $entity->flagForDespawn();
             $player->sendMessage("§r§aMinion đã được lấy lại.");
             if(!$block->isSameState(VanillaBlocks::AIR())) $this->stopBreakAnimation($block);
-            $this->giveItem($player);            
+            $player->getInventory()->addItem($item);
         }else{
            $player->sendMessage("§r§cTúi đồ của bạn đã đầy.");
         }
@@ -315,9 +338,7 @@ class Main extends PluginBase{
                 $block = $minion->getLookingBlock();
                 if($block->isSameState(VanillaBlocks::AIR())) $this->stopBreakAnimation($block);
                 $minion->setDelay(1);
-                //$minion->respawnToAll();
                 $block = $minion->getLookingBlock();
-              //  $minion->breakBlock($block);
                 $this->stopBreakAnimation($block);
             }
             if($data === 1){
@@ -330,7 +351,6 @@ class Main extends PluginBase{
                         $block = $minion->getLookingBlock();
                         $minion->setDelay(1);
                         if($block->isSameState(VanillaBlocks::AIR())) $this->stopBreakAnimation($block);
-                        //$minion->respawnToAll();
                     }else $player->sendMessage("§6§l● §r§cTúi đồ của bạn đầy.");
                 }
             }

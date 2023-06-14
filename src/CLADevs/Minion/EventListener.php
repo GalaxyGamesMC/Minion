@@ -25,13 +25,12 @@ class EventListener implements Listener{
         $dNBT = $item->getNamedTag();
         if(!$e->isCancelled()){
             if($dNBT->getTag("summon") !== null){
-                if(($dNBT->getTag("player", StringTag::class)->getValue() == $name) || Server::getInstance()->isOp($player->getName())){
+                if(($dNBT->getTag("player")->getValue() == $name) || Server::getInstance()->isOp($player->getName())){
                     $pos = $player->getPosition()->add(0, 0.5, 0);
                     $nbt = CompoundTag::create();
                     $nbt->setString("player", $dNBT->getTag("player")->getValue());
-                    if(Main::get()->hasPer(Main::SELL, $player)){ $nbt->setString("SELL", "yes");} else $nbt->setString("SELL", "no");
-                    if(Main::get()->hasPer(Main::DOUBLE_CHEST, $player)) $nbt->setString("DOUBLE_CHEST", "yes");
-                    if(Main::get()->hasPer(Main::SELL, $player)){ $nbt->setString("ORE", "yes");} else $nbt->setString("ORE", "no");
+                    if($item->getNamedTag()->getTag("SELL") === null){ $nbt->setString("SELL", "no");} else $nbt->setString("SELL", "yes");
+                    if($item->getNamedTag()->getTag("ORE") === null){ $nbt->setString("ORE", "no");} else $nbt->setString("ORE", "yes");
                     $skinTag = $player->getSkin();
                     assert($skinTag !== null);
                     $entity = new Minion(

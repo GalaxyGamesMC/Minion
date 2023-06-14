@@ -31,7 +31,10 @@ use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\item\enchantment\EnchantmentInstance;
 use pocketmine\world\particle\BlockBreakParticle;
 
-class Minion extends Human{
+class Minion extends Human implements MinionInterface{
+
+    private const CHEST_SIZE = 0;
+    private const DOUBLE_CHEST_SIZE = 1;
 
     protected string $minionName = "";
     protected float $breakTime = 0.0;
@@ -42,19 +45,16 @@ class Minion extends Human{
     private mixed $delay = null;
     private array $ores = [];
 
-    private bool $is_sell = false;
-    private bool $is_ore = false;
+    protected bool $is_sell = false;
+    protected bool $is_ore = false;
 
-    private Player $owner;
+    private mixed $check = null;
 
     public function __construct(Location $location, Skin $skin, ?CompoundTag $nbt = null)
     {
         parent::__construct($location, $skin, $nbt);
     }
 
-    /**
-     * @throws \JsonException
-     */
     public function initEntity(CompoundTag $nbt): void{
         parent::initEntity($nbt);
         $this->ores = [
@@ -72,19 +72,29 @@ class Minion extends Human{
         $this->setNameTagAlwaysVisible();
         $this->setNameTag($this->minionName);
         $this->setScale(0.7);
-        $skin = Main::get()->getSkin();
-        $this->setSkin($skin);
         if ($nbt->getString("SELL") == "yes"){
             $this->is_sell = true;
         }
         if ($nbt->getString("ORE") == "yes"){
             $this->is_ore = true;
-        }    
+        }
     }
 
-    /**
-     * @throws \JsonException
-     */
+    public function getPropertyMinion(int $type): bool{
+        $extractType = match($type){
+            Main::SELL => "is_sell",
+            Main::ORE => "is_ore"
+        };
+        return $this->$extractType;
+    }
+
+    public function setPropertyMinion(int $type, bool $value): void {
+        match($type){
+            Main::SELL => $this->is_sell = $value,
+            Main::ORE => $this->is_ore = $value
+        };
+    }
+
     public function saveNBT(): CompoundTag{
         $nbt = parent::saveNBT();
         $nbt->setString("player", $this->player);
@@ -113,7 +123,7 @@ class Minion extends Human{
     }
 
     public function setOwner(Player $player) :void{
-        $this->owner = $player;
+        $this->player = $player->getName();
     }
 
     public function setDelay(int $sc): void
@@ -286,7 +296,7 @@ class Minion extends Human{
             if(!$inv->canAddItem($item) and $this->is_sell){
                  Main::get()->sell($this->getOwner(), $inv);
             } else $inv->addItem($item);
-            
+
         }
         $this->getWorld()->setBlock($block->getPosition(), VanillaBlocks::AIR(), true, true);
     }
